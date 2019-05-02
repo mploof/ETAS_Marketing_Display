@@ -7,24 +7,11 @@
 **************************/
 #include <FastLED.h>
 #include <SPI.h>
+#include "led_seg.h"
+#include "battery_cell.h"
 
 // Requires disambiguation with mcp_can.h file in different library
 #include "./mcp_can.h"
-
-
-/**************************
-         Constants
-**************************/
-
-#define CELL_1 0x101
-#define CELL_2 0x201
-#define CELL_3 0x301
-#define CELL_4 0x401
-#define CELL_COUNT 4
-
-#define NUM_LEDS 8
-#define DATA_PIN 6
-
 
 /**************************
         Data Types
@@ -63,6 +50,38 @@ typedef struct _data_pair {
 
 
 /**************************
+         Constants
+**************************/
+
+#define DATA_PIN 6
+
+const int NUM_LEDS = 136;
+const int CELL_COUNT = 4;
+
+const int CELL_BG_PX = 4;
+const int HORIZ_PX = 10;
+const int VERT_PX = 12;
+
+const int HORIZ_START = 4;
+const int VERT_START = 43;
+const int CELL_BG_START = 40;
+const int CELL_START = 104;
+
+// the cs pin of the version after v1.1 is default to D9
+// v0.9b and v1.0 is default D10
+const int SPI_CS_PIN = 9;
+
+const int cell_trace_px[CELL_COUNT][35] = {
+  {92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
+  {76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87},
+  {60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71},
+  {44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25}
+};
+
+const int horiz_trace_px[11] = {15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25};
+
+
+/**************************
         Global Vars
 **************************/
 
@@ -71,86 +90,225 @@ Cell cells[CELL_COUNT];
 
 // Define the array of leds
 CRGB leds[NUM_LEDS];
+LEDSeg horiz;
+LEDSeg vert[CELL_COUNT];
+LEDSeg cell_bg[CELL_COUNT];
+LEDSeg cell_trace[CELL_COUNT];
+BatteryCell cell[CELL_COUNT];
 
-// the cs pin of the version after v1.1 is default to D9
-// v0.9b and v1.0 is default D10
-const int SPI_CS_PIN = 9;
+MCP_CAN CAN(SPI_CS_PIN);  // Create instance of CAN object
 
-MCP_CAN CAN(SPI_CS_PIN);                                    // Set CS pin
-
+int animation_update_interval = 75;
 
 /**************************
-        Functions
+      Core Functions
 **************************/
 
 void setup()
 {
   // Init Serial
   Serial.begin(115200);
-  Serial.println("Serial ready!");
+  Serial.println(F("Serial ready!"));
+
+  for(int i = 0; i < CELL_COUNT; i++) {
+    cell_bg[i] = LEDSeg(&leds[0], CELL_BG_START + i * (VERT_PX + CELL_BG_PX), CELL_BG_PX, true);
+    cell[i] = BatteryCell(&leds[0], CELL_START + i * CELL_PX, CELL_PX, false);
+  }
+  cell_trace[0] = LEDSeg(&leds[0], cell_trace_px[0], 23);
+  cell_trace[1] = LEDSeg(&leds[0], cell_trace_px[1], VERT_PX);
+  cell_trace[2] = LEDSeg(&leds[0], cell_trace_px[2], VERT_PX);
+  cell_trace[3] = LEDSeg(&leds[0], cell_trace_px[3], 23);
+  horiz = LEDSeg(&leds[0], horiz_trace_px, HORIZ_PX);
 
 
   // Init LEDs
-  LEDS.addLeds<WS2812,DATA_PIN,GRB>(leds,NUM_LEDS);
-  int brightness = 25;
+  LEDS.addLeds<WS2812,DATA_PIN,GRB>(leds, NUM_LEDS);
+  int brightness = 35;
   LEDS.setBrightness(brightness);
   char out_msg[100];
   sprintf(out_msg, "LEDs initialized. Brightness: %d", brightness);
   Serial.println(out_msg);
 
+
+  for(int i = 0; i < CELL_COUNT; i++) {
+    cell_bg[i].setAnimationRGB(CRGB::Black, SOLID);
+    cell_bg[i].updateAnimation();
+    cell[i].setVoltage(i * 1000, 0, 4000);
+    cell[i].setDisplayStyle(BatteryCell::DISPLAY_SOLID);
+  }
+  setTraceAnimation();
+
+
   // Init CAN-Bus
   while (CAN_OK != CAN.begin(CAN_500KBPS))              // init can bus : baudrate = 500k
   {
-    Serial.println("CAN BUS Shield init fail");
-    Serial.println(" Init CAN BUS Shield again");
+    Serial.println(F("CAN BUS Shield init fail"));
+    Serial.println(F(" Init CAN BUS Shield again"));
     delay(100);
   }
-  Serial.println("CAN BUS Shield init ok!");
-
-  // while(1) {
-  //   static int pct = 0;
-  //   setCellCharge(pct);
-  //   pct += 12;
-  //   if(pct > 100) {
-  //     pct = 0;
-  //   }
-  //   delay(250);
-  // }
+  Serial.println(F("CAN BUS Shield init ok!"));
 }
-
 
 void loop()
 {
-
+  checkSerial();
+  updateAnimations();
   bool new_msg = checkCANMsg();
-  updateAnimation(new_msg);
+  if(new_msg) {
+
+  }
 
 }
 
-void updateAnimation(bool new_msg){
-  static int highest_cell = 0;
-  unsigned int highest_val = 0;
 
-  if(new_msg) {
+/**************************
+        Functions
+**************************/
+
+void serialSetBackgroundColor(String input_str) {
+  input_str = input_str.substring(input_str.indexOf(',') + 1);
+  Serial.println(input_str);
+  if(input_str[0] == 'r') {
+    setBackgroundColor(CRGB::Red);
+  }
+  else if(input_str[0] == 'y') {
+    setBackgroundColor(CRGB::Yellow);
+  }
+  else if(input_str[0] == 'g') {
+    setBackgroundColor(CRGB::Green);
+  }
+  else if(input_str[0] == 'b') {
+    setBackgroundColor(CRGB::Blue);
+  }
+  else if(input_str[0] == 'o') {
+    setBackgroundColor(CRGB::Black);
+  }
+  else {
+    Serial.println(F("Invalid background color. Valid colors: r, y, g, b\n"));
+  }
+}
+
+
+void serialSetCellPct(String input_str) {
+  // Convert char array to String and parse cell num & charge pct
+  int cell_num = input_str.substring(0,1).toInt() - 1;
+  float pct = (float)input_str.substring(input_str.indexOf(',') + 1).toInt() / 100.0;
+
+  Serial.print(F("Cell: "));
+  Serial.println(cell_num + 1);
+
+  if(pct >= 0.0 && pct <= 1.0) {
+    // Set the charge percent
+    cell[cell_num].setChargePct(pct);
+
+    setTraceAnimation();
+  }
+  else {
+    Serial.println(F("Invalid cell charge value\n"));
+  }
+}
+
+
+void setBackgroundColor(CRGB color) {
+  for(int i = 0; i < CELL_COUNT; i++) {
+    cell_bg[i].setAnimationRGB(color, SOLID);
+    cell_bg[i].updateAnimation();
+  }
+}
+
+
+void setTraceAnimation() {
+
+  float average_pct = 0;
+  for(int i = 0; i < CELL_COUNT; i++) {
+      average_pct += cell[i].getChargePct();
+  }
+  average_pct /= CELL_COUNT;
+
+  int cell_dir[CELL_COUNT] = {0};
+
+  for(int i = 0; i < CELL_COUNT; i++) {
+    if(cell[i].getChargePct() > average_pct) {
+      cell_dir[i] = 1;
+      cell_trace[i].setAnimationRGB(CRGB::Red, CHASE, FWD);
+    }
+    else {
+      cell_trace[i].setAnimationRGB(CRGB::Aqua, CHASE, REV);
+    }
+  }
+
+  if(cell_dir[0] != cell_dir [1] && cell_dir[2] != cell_dir[3]) {
+    horiz.setAnimationRGB(CRGB::Red, INTERLEAVE);
+  }
+  else if(cell_dir[0] && cell_dir[1]) {
+    horiz.setAnimationRGB(CRGB::Red, CHASE, FWD);
+  }
+  else if(cell_dir[3] && cell_dir[4]) {
+    horiz.setAnimationRGB(CRGB::Red, CHASE, REV);
+  }
+  else {
+    // Find the highest cell and update the animation
+    int high_cell = 0;
+    float high_pct = 0.0;
     for(int i = 0; i < CELL_COUNT; i++) {
-      if(cells[i].v_measure > highest_val) {
-        highest_cell = i;
-        highest_val = cells[i].v_measure;
+      if(cell[i].getChargePct() > high_pct) {
+        high_pct = cell[i].getChargePct();
+        high_cell = i;
       }
     }
 
-    Serial.print("Highest cell: ");
-    Serial.print(highest_cell);
-    Serial.print(" Highest val: ");
-    Serial.println(highest_val);
-    Serial.println("");
-  }
+    if(high_cell < 2) {
+      horiz.setAnimationRGB(CRGB::Aqua, CHASE, FWD);
+    }
+    else {
+      horiz.setAnimationRGB(CRGB::Aqua, CHASE, REV);
+    }
 
-  if(highest_cell == 0) {
-    chase(120, true);
   }
-  else{
-    chase(230, false);
+}
+
+
+void checkSerial() {
+  if(Serial.available()) {
+    // Wait for all serial data to arrive
+    delay(30);
+
+    // Get serial input
+    char input[20];
+    String input_str;
+    int i = 0;
+    while(Serial.available()) {
+      input[i] = Serial.read();
+      i++;
+    }
+    input_str = String(input);
+    Serial.println(input_str);
+
+    if(input_str[0] >= '1' && input_str[0] <= '4') {
+      serialSetCellPct(input_str);
+    }
+    else if(input_str[0] == 'b') {
+      serialSetBackgroundColor(input_str);
+    }
+    else if(input_str[0] == 'i') {
+      animation_update_interval = input_str.substring(input_str.indexOf(',') + 1).toInt();
+      Serial.print(F("New update interval: "));
+      Serial.print(animation_update_interval);
+      Serial.println(F("ms\n"));
+    }
+  }
+}
+
+
+void updateAnimations(void){
+  static long last_update = 0;
+  if(millis() - last_update > animation_update_interval) {
+    for(int i = 0; i < CELL_COUNT; i++) {
+      cell_trace[i].updateAnimation();
+    }
+    horiz.updateAnimation();
+    FastLED.show();
+    last_update = millis();
   }
 }
 
@@ -164,8 +322,8 @@ bool checkCANMsg(){
 
     unsigned long canId = CAN.getCanId();
 
-    Serial.println("-----------------------------");
-    Serial.print("Get data from ID: 0x");
+    Serial.println(F("-----------------------------"));
+    Serial.print(F("Get data from ID: 0x"));
     Serial.println(canId, HEX);
 
     for (int i = 0; i < len; i++) // print the data
@@ -222,7 +380,7 @@ bool checkCANMsg(){
       cell->error_sense, cell->current_type, cell->temperature
     );
     Serial.println(out_msg);
-    Serial.print("current: ");
+    Serial.print(F("current: "));
     Serial.println((float)cell->current * 0.0001);
     Serial.println("");
 
@@ -231,40 +389,6 @@ bool checkCANMsg(){
   return ret;
 }
 
-void chase(int hue, bool forward){
-  const int ACTIVE_LEDS = 3;
-  const int MIN_PX = -6;
-  const int MAX_PX = NUM_LEDS - 1;
-  static int led_locations[ACTIVE_LEDS] = {0, -3, -6};
-
-  allOff();
-  for(int i = 0; i < ACTIVE_LEDS; i++) {
-    int this_location = led_locations[i];
-    if(this_location >= 0) {
-      leds[this_location] = CHSV(hue, 255, 255);
-    }
-  }
-  FastLED.show();
-
-  for(int i = 0; i < ACTIVE_LEDS; i++) {
-    if(forward) {
-      led_locations[i]++;
-    }
-    else {
-      led_locations[i]--;
-    }
-    if(led_locations[i] > MAX_PX) {
-      led_locations[i] = MIN_PX;
-    }
-    else if(led_locations[i] < MIN_PX) {
-      led_locations[i] = MAX_PX;
-    }
-  }
-
-  // Wait a little bit before we loop around and do it again
-  delay(100);
-
-}
 
 void allOff(){
   for(int i = 0; i < NUM_LEDS; i++){
@@ -272,25 +396,9 @@ void allOff(){
   }
 }
 
+
 void fadeall() {
   for(int i = 0; i < NUM_LEDS; i++) {
     leds[i].nscale8(250);
   }
-}
-
-void setCellCharge(int milliVolts, int min, int max) {
-
-  float charge_pct = (float)(milliVolts - min) / (float)(max - min);
-
-  int leds_on = (int) (charge_pct / (100.0 / NUM_LEDS)) + 1;
-
-  allOff();
-  for(int i = 0; i < leds_on; i++){
-    if(i < 2) leds[i] = CRGB::Red;
-    else if(i >= 2 && i < 4) leds[i] = CRGB::Yellow;
-    else if(i >= 4 && i < 6) leds[i] = CRGB::Green;
-    else if(i >= 6) leds[i] = CRGB::Blue;
-  }
-  FastLED.show();
-
 }
