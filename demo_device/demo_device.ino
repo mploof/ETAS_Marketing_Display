@@ -53,6 +53,11 @@ typedef struct _data_pair {
          Constants
 **************************/
 
+#define CELL_1 0x101
+#define CELL_2 0x201
+#define CELL_3 0x301
+#define CELL_4 0x401
+
 #define DATA_PIN 6
 
 const int NUM_LEDS = 136;
