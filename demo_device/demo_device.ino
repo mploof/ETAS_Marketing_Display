@@ -290,7 +290,7 @@ void checkSerial() {
     else if(input_str[0] == 'b') {
       serialSetBackgroundColor(input_str);
     }
-    else if(input_str[0] == 'i') {
+    else if (input_str[0] == 'u') {
       animation_update_interval = input_str.substring(input_str.indexOf(',') + 1).toInt();
       Serial.print(F("New update interval: "));
       Serial.print(animation_update_interval);
