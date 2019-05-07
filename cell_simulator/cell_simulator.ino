@@ -38,7 +38,7 @@ typedef struct _cell {
 Cell cells[CELL_COUNT];
 
 void randomizeCell(Cell* cell) {
-  cell->v_measure = random(0, 65536);
+  cell->v_measure = random(0, 5000);
   cell->v_ctrl_val = random(0, 8192);
   cell->error_fuse = random(0, 2);
   cell->error_load_reduction = random(0, 2);
