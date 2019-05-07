@@ -100,6 +100,9 @@ MCP_CAN CAN(SPI_CS_PIN);  // Create instance of CAN object
 
 int animation_update_interval = 75;
 
+int min_voltage_mv = 0;
+int max_voltage_mv = 5000;
+
 /**************************
       Core Functions
 **************************/
@@ -295,6 +298,34 @@ void checkSerial() {
       Serial.print(F("New update interval: "));
       Serial.print(animation_update_interval);
       Serial.println(F("ms\n"));
+    }
+    else if (input_str.substring(0, 3).equals("min")) {
+      int in_val = input_str.substring(input_str.indexOf(',') + 1).toInt();
+      if (in_val >= max_voltage_mv) {
+        Serial.println("Min voltage must be lower than max voltage");
+      }
+      else {
+        min_voltage_mv = in_val;
+        Serial.print("New min voltage: ");
+        Serial.println(min_voltage_mv);
+        for (int i = 0; i < CELL_COUNT; i++) {
+          cell[i].setVoltageRange(min_voltage_mv, max_voltage_mv);
+        }
+      }
+    }
+    else if (input_str.substring(0, 3).equals("max")) {
+      int in_val = input_str.substring(input_str.indexOf(',') + 1).toInt();
+      if (in_val <= min_voltage_mv) {
+        Serial.println("Max voltage must be greater than min voltage");
+      }
+      else {
+        max_voltage_mv = in_val;
+        Serial.print("New max voltage: ");
+        Serial.println(max_voltage_mv);
+        for (int i = 0; i < CELL_COUNT; i++) {
+          cell[i].setVoltageRange(min_voltage_mv, max_voltage_mv);
+        }
+      }
     }
   }
 }

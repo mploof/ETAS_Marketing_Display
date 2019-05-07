@@ -20,7 +20,9 @@ public:
 
   BatteryCell(void);
   BatteryCell(CRGB* p_leds, int p_start_px, int p_length, bool p_reversed);
-  void setVoltage(int milliVolts, int min, int max);
+  void setVoltage(int p_millivolts);
+  void setVoltageRange(int p_min, int p_max);
+  int getVoltage(void);
   void setDisplayStyle(BatteryCell::DisplayStyle style);
   void setChargePct(float pct);
   float getChargePct(void);
@@ -32,6 +34,9 @@ private:
   LEDSeg m_segment;
   float m_charge_pct;
   DisplayStyle m_style;
+  int m_voltage_mv;
+  int m_min_voltage_mv;
+  int m_max_voltage_mv;
 
 };
 

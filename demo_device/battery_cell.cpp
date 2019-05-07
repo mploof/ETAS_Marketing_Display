@@ -7,11 +7,21 @@ BatteryCell::BatteryCell(void) {
 
 BatteryCell::BatteryCell(CRGB* p_leds, int p_start_px, int p_length, bool p_reversed) {
   m_segment = LEDSeg(p_leds, p_start_px, p_length, p_reversed);
+  m_voltage_mv = 0;
+  m_min_voltage_mv = 0;  
+  m_max_voltage_mv = 5000;
 }
 
-void BatteryCell::setVoltage(int p_milliVolts, int p_min, int p_max) {
+void BatteryCell::setVoltageRange(int p_min, int p_max) {
+  m_min_voltage_mv = p_min;
+  m_max_voltage_mv = p_max;
+  setVoltage(m_voltage_mv);
+}
 
-  m_charge_pct = (float)(p_milliVolts - p_min) / (float)(p_max - p_min);
+void BatteryCell::setVoltage(int p_millivolts) {
+
+  m_voltage_mv = p_millivolts;
+  m_charge_pct = (float)(p_millivolts - m_min_voltage_mv) / (float)(m_max_voltage_mv - m_min_voltage_mv);
 
   Serial.print("Cell voltage: ");
   Serial.print(m_charge_pct * 100);
@@ -20,8 +30,13 @@ void BatteryCell::setVoltage(int p_milliVolts, int p_min, int p_max) {
   updateLEDs();
 }
 
+int BatteryCell::getVoltage(void) {
+  return m_voltage_mv;
+}
+
 void BatteryCell::setChargePct(float p_pct) {
   m_charge_pct = p_pct;
+  m_voltage_mv = p_pct * (float)(m_max_voltage_mv - m_min_voltage_mv) + m_min_voltage_mv;
   Serial.print("Cell voltage: ");
   Serial.print(m_charge_pct * 100);
   Serial.println("%");
