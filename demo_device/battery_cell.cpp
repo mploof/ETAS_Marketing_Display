@@ -47,10 +47,6 @@ void BatteryCell::updateLEDs(void) {
   int leds_on = (int) (m_charge_pct * CELL_PX) + 1;
   CRGB color;
 
-  Serial.print("LEDs on: ");
-  Serial.print(leds_on);
-  Serial.println("\n");
-
   this->allOff();
 
   switch(m_style) {

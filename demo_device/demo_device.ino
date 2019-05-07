@@ -91,7 +91,7 @@ const int horiz_trace_px[11] = {15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25};
 **************************/
 
 // Array of simulated battery cells
-Cell cells[CELL_COUNT];
+Cell cell_data[CELL_COUNT];
 
 // Define the array of leds
 CRGB leds[NUM_LEDS];
@@ -118,7 +118,7 @@ void setup()
   Serial.begin(115200);
   Serial.println(F("Serial ready!"));
 
-  for(int i = 0; i < CELL_COUNT; i++) {
+  for (int i = 0; i < CELL_COUNT; i++) {
     cell_bg[i] = LEDSeg(&leds[0], CELL_BG_START + i * (VERT_PX + CELL_BG_PX), CELL_BG_PX, true);
     cell[i] = BatteryCell(&leds[0], CELL_START + i * CELL_PX, CELL_PX, false);
   }
@@ -130,21 +130,21 @@ void setup()
 
 
   // Init LEDs
-  LEDS.addLeds<WS2812,DATA_PIN,GRB>(leds, NUM_LEDS);
+  LEDS.addLeds<WS2812, DATA_PIN, GRB>(leds, NUM_LEDS);
   int brightness = 35;
   LEDS.setBrightness(brightness);
   char out_msg[100];
   sprintf(out_msg, "LEDs initialized. Brightness: %d", brightness);
   Serial.println(out_msg);
 
-
-  for(int i = 0; i < CELL_COUNT; i++) {
+  // Init Cells
+  for (int i = 0; i < CELL_COUNT; i++) {
     cell_bg[i].setAnimationRGB(CRGB::Black, SOLID);
     cell_bg[i].updateAnimation();
-    cell[i].setVoltage(i * 1000, 0, 4000);
+    cell[i].setChargePct(0.22 * i);
     cell[i].setDisplayStyle(BatteryCell::DISPLAY_SOLID);
   }
-  setTraceAnimation();
+  updateTraceAnimation();
 
 
   // Init CAN-Bus
@@ -162,7 +162,7 @@ void loop()
   checkSerial();
   updateAnimations();
   bool new_msg = checkCANMsg();
-  if(new_msg) {
+  if (new_msg) {
 
   }
 
@@ -176,19 +176,22 @@ void loop()
 void serialSetBackgroundColor(String input_str) {
   input_str = input_str.substring(input_str.indexOf(',') + 1);
   Serial.println(input_str);
-  if(input_str[0] == 'r') {
+  if (input_str[0] == 'r') {
     setBackgroundColor(CRGB::Red);
   }
-  else if(input_str[0] == 'y') {
+  else if (input_str[0] == 'y') {
     setBackgroundColor(CRGB::Yellow);
   }
-  else if(input_str[0] == 'g') {
+  else if (input_str[0] == 'g') {
     setBackgroundColor(CRGB::Green);
   }
-  else if(input_str[0] == 'b') {
+  else if (input_str[0] == 'b') {
     setBackgroundColor(CRGB::Blue);
   }
-  else if(input_str[0] == 'o') {
+  else if (input_str[0] == 'w') {
+    setBackgroundColor(CRGB::White);
+  }
+  else if (input_str[0] == 'o') {
     setBackgroundColor(CRGB::Black);
   }
   else {
@@ -199,17 +202,17 @@ void serialSetBackgroundColor(String input_str) {
 
 void serialSetCellPct(String input_str) {
   // Convert char array to String and parse cell num & charge pct
-  int cell_num = input_str.substring(0,1).toInt() - 1;
+  int cell_num = input_str.substring(0, 1).toInt() - 1;
   float pct = (float)input_str.substring(input_str.indexOf(',') + 1).toInt() / 100.0;
 
   Serial.print(F("Cell: "));
   Serial.println(cell_num + 1);
 
-  if(pct >= 0.0 && pct <= 1.0) {
+  if (pct >= 0.0 && pct <= 1.0) {
     // Set the charge percent
     cell[cell_num].setChargePct(pct);
 
-    setTraceAnimation();
+    updateTraceAnimation();
   }
   else {
     Serial.println(F("Invalid cell charge value\n"));
@@ -218,25 +221,25 @@ void serialSetCellPct(String input_str) {
 
 
 void setBackgroundColor(CRGB color) {
-  for(int i = 0; i < CELL_COUNT; i++) {
+  for (int i = 0; i < CELL_COUNT; i++) {
     cell_bg[i].setAnimationRGB(color, SOLID);
     cell_bg[i].updateAnimation();
   }
 }
 
 
-void setTraceAnimation() {
+void updateTraceAnimation() {
 
   float average_pct = 0;
-  for(int i = 0; i < CELL_COUNT; i++) {
-      average_pct += cell[i].getChargePct();
+  for (int i = 0; i < CELL_COUNT; i++) {
+    average_pct += cell[i].getChargePct();
   }
   average_pct /= CELL_COUNT;
 
   int cell_dir[CELL_COUNT] = {0};
 
-  for(int i = 0; i < CELL_COUNT; i++) {
-    if(cell[i].getChargePct() > average_pct) {
+  for (int i = 0; i < CELL_COUNT; i++) {
+    if (cell[i].getChargePct() > average_pct) {
       cell_dir[i] = 1;
       cell_trace[i].setAnimationRGB(CRGB::Red, CHASE, FWD);
     }
@@ -245,27 +248,27 @@ void setTraceAnimation() {
     }
   }
 
-  if(cell_dir[0] != cell_dir [1] && cell_dir[2] != cell_dir[3]) {
+  if (cell_dir[0] != cell_dir [1] && cell_dir[2] != cell_dir[3]) {
     horiz.setAnimationRGB(CRGB::Red, INTERLEAVE);
   }
-  else if(cell_dir[0] && cell_dir[1]) {
+  else if (cell_dir[0] && cell_dir[1]) {
     horiz.setAnimationRGB(CRGB::Red, CHASE, FWD);
   }
-  else if(cell_dir[3] && cell_dir[4]) {
+  else if (cell_dir[3] && cell_dir[4]) {
     horiz.setAnimationRGB(CRGB::Red, CHASE, REV);
   }
   else {
     // Find the highest cell and update the animation
     int high_cell = 0;
     float high_pct = 0.0;
-    for(int i = 0; i < CELL_COUNT; i++) {
-      if(cell[i].getChargePct() > high_pct) {
+    for (int i = 0; i < CELL_COUNT; i++) {
+      if (cell[i].getChargePct() > high_pct) {
         high_pct = cell[i].getChargePct();
         high_cell = i;
       }
     }
 
-    if(high_cell < 2) {
+    if (high_cell < 2) {
       horiz.setAnimationRGB(CRGB::Aqua, CHASE, FWD);
     }
     else {
@@ -277,7 +280,7 @@ void setTraceAnimation() {
 
 
 void checkSerial() {
-  if(Serial.available()) {
+  if (Serial.available()) {
     // Wait for all serial data to arrive
     delay(30);
 
@@ -285,17 +288,17 @@ void checkSerial() {
     char input[20];
     String input_str;
     int i = 0;
-    while(Serial.available()) {
+    while (Serial.available()) {
       input[i] = Serial.read();
       i++;
     }
     input_str = String(input);
     Serial.println(input_str);
 
-    if(input_str[0] >= '1' && input_str[0] <= '4') {
+    if (input_str[0] >= '1' && input_str[0] <= '4') {
       serialSetCellPct(input_str);
     }
-    else if(input_str[0] == 'b') {
+    else if (input_str[0] == 'b') {
       serialSetBackgroundColor(input_str);
     }
     else if (input_str[0] == 'u') {
@@ -336,10 +339,10 @@ void checkSerial() {
 }
 
 
-void updateAnimations(void){
+void updateAnimations(void) {
   static long last_update = 0;
-  if(millis() - last_update > animation_update_interval) {
-    for(int i = 0; i < CELL_COUNT; i++) {
+  if (millis() - last_update > animation_update_interval) {
+    for (int i = 0; i < CELL_COUNT; i++) {
       cell_trace[i].updateAnimation();
     }
     horiz.updateAnimation();
@@ -348,7 +351,7 @@ void updateAnimations(void){
   }
 }
 
-bool checkCANMsg(){
+bool checkCANMsg() {
   unsigned char len = 0;
   unsigned char buf[8];
   bool ret = false;
@@ -389,36 +392,39 @@ bool checkCANMsg(){
     }
 
     // Convert the CAN into its constituent signals
-    Cell* cell = &cells[index];
-    cell->v_measure = buf[0] << 8;
-    cell->v_measure |= buf[1];
-    cell->v_ctrl_val = buf[2] << 5;
-    cell->v_ctrl_val |= buf[3] >> 3;
-    cell->error_fuse = buf[3] & B100;
-    cell->error_load_reduction = buf[3] & B10;
-    cell->error_sense = buf[3] & B1;
-    cell->current = (uint32_t)buf[4] << 16;
-    cell->current |= (uint32_t)buf[5] << 8;
-    cell->current |= (uint32_t)buf[6] >> 2;
-    cell->current_type = buf[6] & B11;
-    cell->temperature = buf[7];
+    Cell* this_cell = &cell_data[index];
+    this_cell->v_measure = buf[0] << 8;
+    this_cell->v_measure |= buf[1];
+    this_cell->v_ctrl_val = buf[2] << 5;
+    this_cell->v_ctrl_val |= buf[3] >> 3;
+    this_cell->error_fuse = buf[3] & B100;
+    this_cell->error_load_reduction = buf[3] & B10;
+    this_cell->error_sense = buf[3] & B1;
+    this_cell->current = (uint32_t)buf[4] << 16;
+    this_cell->current |= (uint32_t)buf[5] << 8;
+    this_cell->current |= (uint32_t)buf[6] >> 2;
+    this_cell->current_type = buf[6] & B11;
+    this_cell->temperature = buf[7];
 
     char out_msg[350];
     sprintf(out_msg,
-      "v_measure: %u\n"
-      "v_ctrl_val: %u\n"
-      "error_fuse: %u\n"
-      "error_load_reduction: %u\n"
-      "error_sense: %u\n"
-      "current_type: %u\n"
-      "temperature: %u",
-      cell->v_measure, cell->v_ctrl_val, cell->error_fuse, cell->error_load_reduction,
-      cell->error_sense, cell->current_type, cell->temperature
-    );
+            "v_measure: %u\n"
+            "v_ctrl_val: %u\n"
+            "error_fuse: %u\n"
+            "error_load_reduction: %u\n"
+            "error_sense: %u\n"
+            "current_type: %u\n"
+            "temperature: %u",
+            this_cell->v_measure, this_cell->v_ctrl_val, this_cell->error_fuse, this_cell->error_load_reduction,
+            this_cell->error_sense, this_cell->current_type, this_cell->temperature
+           );
     Serial.println(out_msg);
     Serial.print(F("current: "));
-    Serial.println((float)cell->current * 0.0001);
+    Serial.println((float)this_cell->current * 0.0001);
     Serial.println("");
+
+    cell[index].setVoltage(this_cell->v_measure);
+    updateTraceAnimation();
 
   }
 
@@ -426,15 +432,15 @@ bool checkCANMsg(){
 }
 
 
-void allOff(){
-  for(int i = 0; i < NUM_LEDS; i++){
+void allOff() {
+  for (int i = 0; i < NUM_LEDS; i++) {
     leds[i] = CRGB::Black;
   }
 }
 
 
 void fadeall() {
-  for(int i = 0; i < NUM_LEDS; i++) {
+  for (int i = 0; i < NUM_LEDS; i++) {
     leds[i].nscale8(250);
   }
 }
