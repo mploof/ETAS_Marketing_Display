@@ -108,6 +108,7 @@ int animation_update_interval = 75;
 int min_voltage_mv = 0;
 int max_voltage_mv = 5000;
 
+bool print_CAN_msg = false;
 int brightness = 35;
 
 /**************************
@@ -295,6 +296,7 @@ void checkSerial() {
       i++;
     }
     input_str = String(input);
+    Serial.print("echo: ");
     Serial.println(input_str);
 
     if (input_str[0] >= '1' && input_str[0] <= '4') {
@@ -384,16 +386,18 @@ bool checkCANMsg() {
 
     unsigned long canId = CAN.getCanId();
 
-    Serial.println(F("-----------------------------"));
-    Serial.print(F("Get data from ID: 0x"));
-    Serial.println(canId, HEX);
+    if (print_CAN_msg) {
+      Serial.println(F("\n-----------------------------"));
+      Serial.print(F("Get data from ID: 0x"));
+      Serial.println(canId, HEX);
 
-    for (int i = 0; i < len; i++) // print the data
-    {
-      Serial.print(buf[i], HEX);
-      Serial.print("\t");
+      for (int i = 0; i < len; i++) // print the data
+      {
+        Serial.print(buf[i], HEX);
+        Serial.print("\t");
+      }
+      Serial.println();
     }
-    Serial.println();
 
     unsigned char index;
     switch (canId) {
@@ -429,26 +433,35 @@ bool checkCANMsg() {
     this_cell->current_type = buf[6] & B11;
     this_cell->temperature = buf[7];
 
-    char out_msg[350];
-    sprintf(out_msg,
-            "v_measure: %u\n"
-            "v_ctrl_val: %u\n"
-            "error_fuse: %u\n"
-            "error_load_reduction: %u\n"
-            "error_sense: %u\n"
-            "current_type: %u\n"
-            "temperature: %u",
-            this_cell->v_measure, this_cell->v_ctrl_val, this_cell->error_fuse, this_cell->error_load_reduction,
-            this_cell->error_sense, this_cell->current_type, this_cell->temperature
-           );
-    Serial.println(out_msg);
-    Serial.print(F("current: "));
-    Serial.println((float)this_cell->current * 0.0001);
-    Serial.println("");
+    if (print_CAN_msg) {
+      char out_msg[350];
+      sprintf(out_msg,
+              "v_measure: %u\n"
+              "v_ctrl_val: %u\n"
+              "error_fuse: %u\n"
+              "error_load_reduction: %u\n"
+              "error_sense: %u\n"
+              "current_type: %u\n"
+              "temperature: %u",
+              this_cell->v_measure, this_cell->v_ctrl_val, this_cell->error_fuse, this_cell->error_load_reduction,
+              this_cell->error_sense, this_cell->current_type, this_cell->temperature
+             );
+      Serial.println(out_msg);
+      Serial.print(F("current: "));
+      Serial.println((float)this_cell->current * 0.0001);
+      Serial.println("");
+    }
 
-    cell[index].setVoltage(this_cell->v_measure);
+    float charge_pct = cell[index].setVoltage(this_cell->v_measure) * 100;
     updateTraceAnimation();
 
+    if (print_CAN_msg) {
+      Serial.print("Cell ");
+      Serial.print(index + 1);
+      Serial.print(" charge: ");
+      Serial.print(charge_pct);
+      Serial.println("%");
+    }
   }
 
   return ret;
