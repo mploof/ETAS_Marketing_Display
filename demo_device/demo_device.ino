@@ -287,7 +287,8 @@ void checkSerial() {
 
     // Get serial input
     char input[20];
-    String input_str;
+    String input_str = "";
+    memset(input, '\0', 20);
     int i = 0;
     while (Serial.available()) {
       input[i] = Serial.read();
@@ -313,6 +314,9 @@ void checkSerial() {
       if (in_val >= max_voltage_mv) {
         Serial.println("Min voltage must be lower than max voltage");
       }
+      else if(in_val < 0) {
+        Serial.println("Max voltage must be greater than or equal to 0");
+      }
       else {
         min_voltage_mv = in_val;
         Serial.print("New min voltage: ");
@@ -326,6 +330,9 @@ void checkSerial() {
       int in_val = input_str.substring(input_str.indexOf(',') + 1).toInt();
       if (in_val <= min_voltage_mv) {
         Serial.println("Max voltage must be greater than min voltage");
+      }
+      else if(in_val < 1) {
+        Serial.println("Max voltage must be greater than 0");
       }
       else {
         max_voltage_mv = in_val;

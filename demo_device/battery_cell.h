@@ -20,7 +20,7 @@ public:
 
   BatteryCell(void);
   BatteryCell(CRGB* p_leds, int p_start_px, int p_length, bool p_reversed);
-  void setVoltage(int p_millivolts);
+  float setVoltage(int p_millivolts);
   void setVoltageRange(int p_min, int p_max);
   int getVoltage(void);
   void setDisplayStyle(BatteryCell::DisplayStyle style);

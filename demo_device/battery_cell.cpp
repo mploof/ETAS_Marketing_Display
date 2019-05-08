@@ -18,16 +18,14 @@ void BatteryCell::setVoltageRange(int p_min, int p_max) {
   setVoltage(m_voltage_mv);
 }
 
-void BatteryCell::setVoltage(int p_millivolts) {
+float BatteryCell::setVoltage(int p_millivolts) {
 
   m_voltage_mv = p_millivolts;
   m_charge_pct = (float)(p_millivolts - m_min_voltage_mv) / (float)(m_max_voltage_mv - m_min_voltage_mv);
 
-  Serial.print("Cell voltage: ");
-  Serial.print(m_charge_pct * 100);
-  Serial.println("%");
-
   updateLEDs();
+
+  return m_charge_pct;
 }
 
 int BatteryCell::getVoltage(void) {
