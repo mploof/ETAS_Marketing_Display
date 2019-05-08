@@ -108,6 +108,8 @@ int animation_update_interval = 75;
 int min_voltage_mv = 0;
 int max_voltage_mv = 5000;
 
+int brightness = 35;
+
 /**************************
       Core Functions
 **************************/
@@ -130,8 +132,7 @@ void setup()
 
 
   // Init LEDs
-  LEDS.addLeds<WS2812, DATA_PIN, GRB>(leds, NUM_LEDS);
-  int brightness = 35;
+  LEDS.addLeds<WS2812, DATA_PIN, GRB>(leds, NUM_LEDS);  
   LEDS.setBrightness(brightness);
   char out_msg[100];
   sprintf(out_msg, "LEDs initialized. Brightness: %d", brightness);
@@ -333,6 +334,21 @@ void checkSerial() {
         for (int i = 0; i < CELL_COUNT; i++) {
           cell[i].setVoltageRange(min_voltage_mv, max_voltage_mv);
         }
+      }
+    }
+    else if (input_str.substring(0, 5).equals("print")) {
+      print_CAN_msg = !print_CAN_msg;
+    }
+    else if (input_str[0] == 'i') {
+      int in_val = input_str.substring(input_str.indexOf(',') + 1).toInt();
+      if (in_val >= 0 && in_val <= 255) {
+        brightness = in_val;
+        LEDS.setBrightness(brightness);
+        Serial.print("Brightness: ");
+        Serial.println(brightness);
+      }
+      else {
+        Serial.println("Invalid value. Valid brightness values: 0-255");
       }
     }
   }
