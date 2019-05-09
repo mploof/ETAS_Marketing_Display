@@ -9,7 +9,7 @@ BatteryCell::BatteryCell(CRGB* p_leds, int p_start_px, int p_length, bool p_reve
   m_segment = LEDSeg(p_leds, p_start_px, p_length, p_reversed);
   m_voltage_mv = 0;
   m_min_voltage_mv = 0;  
-  m_max_voltage_mv = 5000;
+  m_max_voltage_mv = 8000;
 }
 
 void BatteryCell::setVoltageRange(int p_min, int p_max) {
@@ -21,6 +21,12 @@ void BatteryCell::setVoltageRange(int p_min, int p_max) {
 float BatteryCell::setVoltage(int p_millivolts) {
 
   m_voltage_mv = p_millivolts;
+  if(m_voltage_mv < m_min_voltage_mv) {
+    m_voltage_mv = m_min_voltage_mv;
+  }
+  else if(m_voltage_mv > m_max_voltage_mv) {
+    m_voltage_mv = m_max_voltage_mv;
+  }
   m_charge_pct = (float)(p_millivolts - m_min_voltage_mv) / (float)(m_max_voltage_mv - m_min_voltage_mv);
 
   updateLEDs();

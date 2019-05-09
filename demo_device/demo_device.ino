@@ -60,22 +60,22 @@ typedef struct _data_pair {
 
 #define DATA_PIN 6
 
-const int NUM_LEDS = 136;
-const int CELL_COUNT = 4;
+const int NUM_LEDS = 136; // Total LED count
+const int CELL_COUNT = 4; // Number of simulated battery cells
 
-const int CELL_BG_PX = 4;
-const int HORIZ_PX = 10;
-const int VERT_PX = 12;
+const int CELL_BG_PX = 4; // Number of pixels per background LED segment
+const int HORIZ_PX = 10; // Number of pixels in horizontal LED segment
+const int VERT_PX = 12; // Number of pixels between horizontal LEDs and background LED segments
 
-const int HORIZ_START = 4;
-const int VERT_START = 43;
-const int CELL_BG_START = 40;
-const int CELL_START = 104;
+const int CELL_BG_START = 40; // Pixel location for first background segment
+const int CELL_START = 104; // Pixel location for
 
-// the cs pin of the version after v1.1 is default to D9
-// v0.9b and v1.0 is default D10
 const int SPI_CS_PIN = 9;
 
+const int BITS_PER_BYTE = 8;
+
+// Array of pixel location arrays. Each pixel location array contains a group of
+// pixels that form the trace leading to each of the individual cells. Do not modify.
 const int cell_trace_px[CELL_COUNT][35] = {
   {92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
   {76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87},
@@ -83,6 +83,7 @@ const int cell_trace_px[CELL_COUNT][35] = {
   {44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25}
 };
 
+// Pixel location array for the horizontal trace segment
 const int horiz_trace_px[11] = {15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25};
 
 
@@ -106,10 +107,11 @@ MCP_CAN CAN(SPI_CS_PIN);  // Create instance of CAN object
 int animation_update_interval = 75;
 
 int min_voltage_mv = 0;
-int max_voltage_mv = 5000;
+int max_voltage_mv = 8000;
 
-bool print_CAN_msg = false;
+bool print_CAN_msg = true;
 int brightness = 35;
+int update_interval = 500;
 
 /**************************
       Core Functions
@@ -133,7 +135,7 @@ void setup()
 
 
   // Init LEDs
-  LEDS.addLeds<WS2812, DATA_PIN, GRB>(leds, NUM_LEDS);  
+  LEDS.addLeds<WS2812, DATA_PIN, GRB>(leds, NUM_LEDS);
   LEDS.setBrightness(brightness);
   char out_msg[100];
   sprintf(out_msg, "LEDs initialized. Brightness: %d", brightness);
@@ -150,7 +152,7 @@ void setup()
 
 
   // Init CAN-Bus
-  while (CAN_OK != CAN.begin(CAN_500KBPS))              // init can bus : baudrate = 500k
+  while (CAN_OK != CAN.begin(CAN_1000KBPS))              // init can bus : baudrate = 500k
   {
     Serial.println(F("CAN BUS Shield init fail"));
     Serial.println(F(" Init CAN BUS Shield again"));
@@ -163,11 +165,13 @@ void loop()
 {
   checkSerial();
   updateAnimations();
-  bool new_msg = checkCANMsg();
-  if (new_msg) {
+  updateTraceAnimation();
 
+  static long last_update = millis();
+  if (millis() - last_update > update_interval) {
+    while (!checkCANMsg()) {} //  Wait until we have all four cell messages
+    last_update = millis();
   }
-
 }
 
 
@@ -306,17 +310,23 @@ void checkSerial() {
       serialSetBackgroundColor(input_str);
     }
     else if (input_str[0] == 'u') {
-      animation_update_interval = input_str.substring(input_str.indexOf(',') + 1).toInt();
-      Serial.print(F("New update interval: "));
-      Serial.print(animation_update_interval);
-      Serial.println(F("ms\n"));
+      int in_val = input_str.substring(input_str.indexOf(',') + 1).toInt();
+      if (in_val < 10) {
+        Serial.print(F("Update interval must be equal to or greater than 10ms"));
+      }
+      else {
+        animation_update_interval = in_val;
+        Serial.print(F("New update interval: "));
+        Serial.print(animation_update_interval);
+        Serial.println(F("ms\n"));
+      }
     }
     else if (input_str.substring(0, 3).equals("min")) {
       int in_val = input_str.substring(input_str.indexOf(',') + 1).toInt();
       if (in_val >= max_voltage_mv) {
         Serial.println("Min voltage must be lower than max voltage");
       }
-      else if(in_val < 0) {
+      else if (in_val < 0) {
         Serial.println("Max voltage must be greater than or equal to 0");
       }
       else {
@@ -333,7 +343,7 @@ void checkSerial() {
       if (in_val <= min_voltage_mv) {
         Serial.println("Max voltage must be greater than min voltage");
       }
-      else if(in_val < 1) {
+      else if (in_val < 1) {
         Serial.println("Max voltage must be greater than 0");
       }
       else {
@@ -347,6 +357,13 @@ void checkSerial() {
     }
     else if (input_str.substring(0, 5).equals("print")) {
       print_CAN_msg = !print_CAN_msg;
+      Serial.print("CAN message printing ");
+      if (print_CAN_msg) {
+        Serial.println("enabled");
+      }
+      else {
+        Serial.println("disabled");
+      }
     }
     else if (input_str[0] == 'i') {
       int in_val = input_str.substring(input_str.indexOf(',') + 1).toInt();
@@ -358,6 +375,17 @@ void checkSerial() {
       }
       else {
         Serial.println("Invalid value. Valid brightness values: 0-255");
+      }
+    }
+    else if (input_str[0] == 'c') {
+      int in_val = input_str.substring(input_str.indexOf(',') + 1).toInt();
+      if (in_val >= 100 && in_val <= 5000) {
+        update_interval = in_val;
+        Serial.print("New CAN read interval: ");
+        Serial.println(update_interval);
+      }
+      else {
+        Serial.println("Invalid value. Valid CAN read interval values: 100-5000");
       }
     }
   }
@@ -380,24 +408,13 @@ bool checkCANMsg() {
   unsigned char len = 0;
   unsigned char buf[8];
   bool ret = false;
+  static bool msg_received[CELL_COUNT] = {false};
+
   if (CAN_MSGAVAIL == CAN.checkReceive())           // check if data coming
   {
     CAN.readMsgBuf(&len, buf);    // read data,  len: data length, buf: data buf
 
     unsigned long canId = CAN.getCanId();
-
-    if (print_CAN_msg) {
-      Serial.println(F("\n-----------------------------"));
-      Serial.print(F("Get data from ID: 0x"));
-      Serial.println(canId, HEX);
-
-      for (int i = 0; i < len; i++) // print the data
-      {
-        Serial.print(buf[i], HEX);
-        Serial.print("\t");
-      }
-      Serial.println();
-    }
 
     unsigned char index;
     switch (canId) {
@@ -412,16 +429,36 @@ bool checkCANMsg() {
         break;
       case CELL_4:
         index = 3;
-        ret = true;
         break;
       default:
         return;
     }
 
+    msg_received[index] = true;
+
+    if (print_CAN_msg) {
+      Serial.println(F("\n-----------------------------"));
+      Serial.print(F("Get data from ID: 0x"));
+      Serial.println(canId, HEX);
+
+      for (int i = 0; i < len; i++) // print the data
+      {
+        Serial.print(buf[i], HEX);
+        Serial.print("\t");
+      }
+      Serial.println();
+    }
+
     // Convert the CAN into its constituent signals
     Cell* this_cell = &cell_data[index];
+
     this_cell->v_measure = buf[0] << 8;
     this_cell->v_measure |= buf[1];
+
+    // Convert little endian value
+    this_cell->v_measure = __builtin_bswap16(this_cell->v_measure);
+    this_cell->v_measure *= 0.25; // CAN message scale factor
+
     this_cell->v_ctrl_val = buf[2] << 5;
     this_cell->v_ctrl_val |= buf[3] >> 3;
     this_cell->error_fuse = buf[3] & B100;
@@ -453,7 +490,6 @@ bool checkCANMsg() {
     }
 
     float charge_pct = cell[index].setVoltage(this_cell->v_measure) * 100;
-    updateTraceAnimation();
 
     if (print_CAN_msg) {
       Serial.print("Cell ");
@@ -461,6 +497,20 @@ bool checkCANMsg() {
       Serial.print(" charge: ");
       Serial.print(charge_pct);
       Serial.println("%");
+    }
+  }
+
+  // Check whether a fresh update has been received for all the cells
+  for (int i = 0; i < CELL_COUNT; i++) {
+    if (!msg_received[i]) {
+      ret = false;
+    }
+  }
+
+  // If all messages have been received, reset the received values
+  if (ret) {
+    for (int i = 0; i < CELL_COUNT; i++) {
+      msg_received[i] = false;
     }
   }
 
